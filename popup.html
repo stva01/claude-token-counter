@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Claude Token Counter</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,500;1,400&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:           oklch(0.27 0.00 106.64);
+    --bg-card:      oklch(0.31 0.00 106.60);
+    --bg-sidebar:   oklch(0.24 0.00 67.71);
+    --fg:           oklch(0.81 0.01 93.01);
+    --fg-muted:     oklch(0.61 0.01 97.42);
+    --fg-dim:       oklch(0.43 0.01 100.22);
+    --primary:      oklch(0.67 0.13 38.76);
+    --primary-soft: oklch(0.56 0.13 43.00);
+    --border:       oklch(0.36 0.01 106.89);
+    --border-soft:  oklch(0.31 0.00 106.60);
+    --warn:         oklch(0.69 0.16 55.00);
+    --danger:       oklch(0.64 0.21 25.33);
+    --green:        oklch(0.62 0.14 160.00);
+    --radius:       0.5rem;
+  }
+
+  body {
+    width: 288px;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 11px;
+    font-weight: 300;
+    overflow: hidden;
+  }
+
+  /* ── Header ── */
+  .header {
+    background: var(--bg-sidebar);
+    padding: 13px 14px 11px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .header-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .logo-diamond {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+  }
+
+  .header-title {
+    font-family: 'Lora', Georgia, serif;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--fg);
+    letter-spacing: 0.01em;
+    line-height: 1;
+  }
+
+  .header-title em {
+    font-style: italic;
+    color: var(--primary);
+  }
+
+  .model-badge {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    font-weight: 400;
+    color: var(--fg-dim);
+    background: var(--border-soft);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 2px 5px;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+  }
+
+  /* ── Body ── */
+  .body {
+    padding: 12px 14px 0;
+  }
+
+  /* ── Section label ── */
+  .section-label {
+    font-size: 8.5px;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--fg-dim);
+    margin-bottom: 10px;
+    padding-bottom: 5px;
+    border-bottom: 1px solid var(--border-soft);
+  }
+
+  /* ── Metric row ── */
+  .metric {
+    display: grid;
+    grid-template-columns: 52px 1fr 56px;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 2px;
+  }
+
+  .metric-label {
+    font-size: 9.5px;
+    font-weight: 400;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--fg-muted);
+  }
+
+  .bar-track {
+    height: 3px;
+    background: var(--border);
+    border-radius: 99px;
+    overflow: hidden;
+    position: relative;
+  }
+
+  .bar-fill {
+    height: 100%;
+    width: 0%;
+    border-radius: 99px;
+    background: var(--green);
+    transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1),
+                background 0.4s ease;
+    position: relative;
+  }
+
+  /* Glow on active bar */
+  .bar-fill::after {
+    content: '';
+    position: absolute;
+    right: -1px;
+    top: -1px;
+    width: 4px;
+    height: 5px;
+    border-radius: 99px;
+    background: inherit;
+    opacity: 0.6;
+    filter: blur(2px);
+  }
+
+  .metric-val {
+    font-size: 10px;
+    font-weight: 400;
+    color: var(--fg);
+    text-align: right;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+  }
+
+  .metric-sub {
+    grid-column: 2 / 4;
+    font-size: 8.5px;
+    color: var(--fg-dim);
+    text-align: right;
+    margin-top: 1px;
+    margin-bottom: 7px;
+    min-height: 11px;
+    letter-spacing: 0.02em;
+  }
+
+  /* ── Divider ── */
+  .divider {
+    height: 1px;
+    background: var(--border-soft);
+    margin: 10px 0;
+  }
+
+  /* ── Context block ── */
+  .context-block {
+    margin-bottom: 12px;
+  }
+
+  .context-nums {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 5px;
+  }
+
+  .context-big {
+    font-size: 20px;
+    font-weight: 300;
+    color: var(--fg);
+    letter-spacing: -0.02em;
+    line-height: 1;
+    font-family: 'Lora', serif;
+  }
+
+  .context-big span {
+    font-size: 11px;
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--fg-dim);
+    margin-left: 3px;
+    font-weight: 300;
+    letter-spacing: 0.03em;
+  }
+
+  .context-limit {
+    font-size: 9px;
+    color: var(--fg-dim);
+    letter-spacing: 0.04em;
+  }
+
+  .bar-track.context-track {
+    height: 2px;
+  }
+
+  .context-sub {
+    font-size: 8.5px;
+    color: var(--fg-dim);
+    text-align: right;
+    margin-top: 4px;
+    min-height: 11px;
+    letter-spacing: 0.02em;
+  }
+
+  /* ── Footer ── */
+  .footer {
+    padding: 0 14px 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .refresh-btn {
+    flex: 1;
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--fg-muted);
+    border-radius: var(--radius);
+    padding: 6px 10px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9.5px;
+    font-weight: 400;
+    letter-spacing: 0.06em;
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s, background 0.15s;
+    text-transform: uppercase;
+  }
+
+  .refresh-btn:hover {
+    border-color: var(--primary);
+    color: var(--primary);
+    background: oklch(0.67 0.13 38.76 / 0.06);
+  }
+
+  .refresh-btn:active {
+    background: oklch(0.67 0.13 38.76 / 0.12);
+  }
+
+  .status-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--fg-dim);
+    flex-shrink: 0;
+    transition: background 0.3s;
+  }
+
+  .status-dot.live { background: var(--green); }
+
+  #status {
+    font-size: 8.5px;
+    color: var(--fg-dim);
+    letter-spacing: 0.03em;
+  }
+
+  /* ── Stagger-in animation ── */
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(4px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .header       { animation: fadeUp 0.22s ease both; }
+  .body         { animation: fadeUp 0.26s 0.04s ease both; }
+  .footer       { animation: fadeUp 0.26s 0.10s ease both; }
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="header">
+  <div class="header-left">
+    <!-- Claude diamond logo -->
+    <svg class="logo-diamond" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M9 1.5L14.5 6.5L9 16.5L3.5 6.5L9 1.5Z" fill="oklch(0.67 0.13 38.76)" opacity="0.9"/>
+      <path d="M9 1.5L14.5 6.5L9 9.5L3.5 6.5L9 1.5Z" fill="oklch(0.56 0.13 43.00)" opacity="0.7"/>
+    </svg>
+    <span class="header-title">token <em>counter</em></span>
+  </div>
+  <span class="model-badge" id="val-model">—</span>
+</div>
+
+<!-- Body -->
+<div class="body">
+
+  <!-- Usage section -->
+  <div class="section-label">Usage limits</div>
+
+  <!-- Session -->
+  <div class="metric">
+    <div class="metric-label">Session</div>
+    <div class="bar-track"><div class="bar-fill" id="bar-session"></div></div>
+    <div class="metric-val" id="val-session">—</div>
+  </div>
+  <div class="metric">
+    <div></div>
+    <div class="metric-sub" id="sub-session"></div>
+  </div>
+
+  <!-- Weekly -->
+  <div class="metric">
+    <div class="metric-label">Weekly</div>
+    <div class="bar-track"><div class="bar-fill" id="bar-weekly"></div></div>
+    <div class="metric-val" id="val-weekly">—</div>
+  </div>
+  <div class="metric" style="margin-bottom:0">
+    <div></div>
+    <div class="metric-sub"></div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- Context -->
+  <div class="context-block">
+    <div class="section-label">Conversation context</div>
+    <div class="context-nums">
+      <div class="context-big" id="val-context-big">—<span id="val-context-unit"></span></div>
+      <div class="context-limit">/ 200k</div>
+    </div>
+    <div class="bar-track context-track">
+      <div class="bar-fill" id="bar-context"></div>
+    </div>
+    <div class="context-sub" id="sub-cache"></div>
+  </div>
+
+</div>
+
+<!-- Footer -->
+<div class="footer">
+  <div class="status-dot" id="status-dot"></div>
+  <span id="status">loading…</span>
+  <button class="refresh-btn" id="refresh-btn">↻ refresh</button>
+</div>
+
+<script>
+// ── Helpers ────────────────────────────────────────────────────────────────
+const CONTEXT_LIMIT = 200_000;
+
+function pct(f)    { return Math.round(f * 100) + "%"; }
+function fmtNum(n) { return n >= 1000 ? (n / 1000).toFixed(1) + "k" : String(n); }
+
+function barColor(f) {
+  if (f > 0.85) return "oklch(0.64 0.21 25.33)";   // danger red
+  if (f > 0.65) return "oklch(0.69 0.16 55.00)";   // warm amber
+  return "oklch(0.62 0.14 160.00)";                 // green
+}
+
+function fmtCountdown(ms) {
+  const s = Math.floor(ms / 1000);
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), ss = s % 60;
+  if (h > 0) return `resets in ${h}h ${m}m`;
+  if (m > 0) return `resets in ${m}m ${ss}s`;
+  return `resets in ${ss}s`;
+}
+
+function setBar(id, fraction) {
+  const el = document.getElementById(id);
+  if (!el || fraction == null) return;
+  const w = Math.min(100, Math.round(fraction * 100));
+  el.style.width = w + "%";
+  el.style.background = barColor(fraction);
+}
+
+// ── Render ─────────────────────────────────────────────────────────────────
+function render(state) {
+  const dot = document.getElementById("status-dot");
+
+  if (!state || Object.keys(state).length === 0) {
+    document.getElementById("val-session").textContent = "no data";
+    document.getElementById("val-weekly").textContent  = "—";
+    document.getElementById("status").textContent      = "use Claude first";
+    return;
+  }
+
+  dot.classList.add("live");
+
+  const sessionFrac = state.session?.sseExactFraction ?? state.session?.fraction ?? null;
+  const weeklyFrac  = state.weekly?.sseExactFraction  ?? state.weekly?.fraction  ?? null;
+  const ctxFrac     = state.conversationTokens ? state.conversationTokens / CONTEXT_LIMIT : null;
+
+  setBar("bar-session", sessionFrac);
+  setBar("bar-weekly",  weeklyFrac);
+  setBar("bar-context", ctxFrac);
+
+  document.getElementById("val-session").textContent =
+    sessionFrac != null ? pct(sessionFrac) + " used" : "—";
+  document.getElementById("val-weekly").textContent =
+    weeklyFrac != null ? pct(weeklyFrac) + " used" : "—";
+
+  // Big context number
+  if (state.conversationTokens) {
+    document.getElementById("val-context-big").childNodes[0].textContent =
+      fmtNum(state.conversationTokens);
+    document.getElementById("val-context-unit").textContent = " tokens";
+  }
+
+  // Model
+  if (state.model) {
+    document.getElementById("val-model").textContent =
+      state.model.replace("claude-", "").replace(/-\d{8}$/, "");
+  }
+
+  // Session reset timer
+  const sessionReset = state.session?.resetsAt || state.session?.resetAt;
+  if (sessionReset) {
+    const tick = () => {
+      const ms = sessionReset - Date.now();
+      document.getElementById("sub-session").textContent =
+        ms > 0 ? fmtCountdown(ms) : "window refreshed";
+    };
+    tick();
+    clearInterval(window._sessionTimer);
+    window._sessionTimer = setInterval(tick, 1000);
+  }
+
+  // Cache timer
+  if (state.cacheWriteAt) {
+    const TTL = 5 * 60 * 1000;
+    const tick = () => {
+      const ms = (state.cacheWriteAt + TTL) - Date.now();
+      document.getElementById("sub-cache").textContent =
+        ms > 0 ? `cache active · ${Math.floor(ms/1000)}s left` : "cache expired";
+    };
+    tick();
+    clearInterval(window._cacheTimer);
+    window._cacheTimer = setInterval(tick, 1000);
+  }
+
+  // Status line
+  const ago = state.officialFetchedAt
+    ? Math.round((Date.now() - state.officialFetchedAt) / 1000)
+    : null;
+  document.getElementById("status").textContent =
+    ago != null ? `synced ${ago}s ago` : "live";
+}
+
+// ── Init ───────────────────────────────────────────────────────────────────
+chrome.runtime.sendMessage({ type: "GET_STATE" }, render);
+
+document.getElementById("refresh-btn").addEventListener("click", () => {
+  document.getElementById("status").textContent = "refreshing…";
+  document.getElementById("status-dot").classList.remove("live");
+  chrome.runtime.sendMessage({ type: "TRIGGER_POLL" }, () => {
+    setTimeout(() => chrome.runtime.sendMessage({ type: "GET_STATE" }, render), 1500);
+  });
+});
+</script>
+
+</body>
+</html>
