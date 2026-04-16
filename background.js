@@ -5,7 +5,7 @@
 const POLL_INTERVAL_MINUTES = 3;
 const USAGE_KEY = "claudeUsage";
 
-// Alarm: periodic polling
+// ── Alarm: periodic polling ────────────────────────────────────────────────
 chrome.runtime.onInstalled.addListener(() => {
   chrome.alarms.create("pollUsage", { periodInMinutes: POLL_INTERVAL_MINUTES });
 });
@@ -14,7 +14,7 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === "pollUsage") pollUsage();
 });
 
-// On message from content/injected scripts
+// ── On message from content/injected scripts ───────────────────────────────
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type === "SSE_DATA") {
     mergeSSEData(msg.data);
@@ -32,7 +32,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
 });
 
-// Fetch org ID from cookie
+// ── Fetch org ID from cookie ───────────────────────────────────────────────
 async function getOrgId() {
   return new Promise((resolve) => {
     chrome.cookies.get({ url: "https://claude.ai", name: "lastActiveOrg" }, (c) => {
@@ -41,7 +41,7 @@ async function getOrgId() {
   });
 }
 
-// Poll the official /usage endpoint
+// ── Poll the official /usage endpoint ─────────────────────────────────────
 async function pollUsage() {
   const orgId = await getOrgId();
   if (!orgId) return;
@@ -95,16 +95,24 @@ function parseUsageSlot(slot) {
   };
 }
 
-// Merge SSE-intercepted data
+// ── Merge SSE-intercepted data ─────────────────────────────────────────────
 async function mergeSSEData(sse) {
   const current = await getState();
   const next = { ...current };
 
   if (sse.sessionFraction != null) {
-    next.session = { ...(next.session || {}), sseExactFraction: sse.sessionFraction };
+    next.session = {
+      ...(next.session || {}),
+      sseExactFraction: sse.sessionFraction,
+      ...(sse.sessionResetsAt ? { resetsAt: sse.sessionResetsAt } : {}),
+    };
   }
   if (sse.weeklyFraction != null) {
-    next.weekly = { ...(next.weekly || {}), sseExactFraction: sse.weeklyFraction };
+    next.weekly = {
+      ...(next.weekly || {}),
+      sseExactFraction: sse.weeklyFraction,
+      ...(sse.weeklyResetsAt ? { resetsAt: sse.weeklyResetsAt } : {}),
+    };
   }
   if (sse.conversationTokens != null) next.conversationTokens = sse.conversationTokens;
   if (sse.model) next.model = sse.model;
@@ -115,7 +123,7 @@ async function mergeSSEData(sse) {
   broadcastUpdate(next);
 }
 
-// Storage helpers
+// ── Storage helpers ────────────────────────────────────────────────────────
 async function getState() {
   return new Promise((resolve) => {
     chrome.storage.local.get(USAGE_KEY, (r) => resolve(r[USAGE_KEY] || {}));
@@ -128,15 +136,13 @@ async function setState(data) {
   });
 }
 
-// Broadcast to all claude.ai tabs
+// ── Broadcast to all claude.ai tabs ───────────────────────────────────────
 function broadcastUpdate(state) {
   chrome.tabs.query({ url: "https://claude.ai/*" }, (tabs) => {
     for (const tab of tabs) {
-      chrome.tabs.sendMessage(tab.id, { type: "STATE_UPDATE", state }).catch(() => {});
+      chrome.tabs.sendMessage(tab.id, { type: "STATE_UPDATE", state }).catch(() => { });
     }
   });
 }
 
 pollUsage();
-
-// Set up polling logs

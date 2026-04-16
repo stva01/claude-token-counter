@@ -1,53 +1,218 @@
 // content.js — isolated content script world
 // 1. Injects injected.js into MAIN world (MUST run at document_start)
 // 2. Listens for CustomEvents from the injected script
-// 3. Forwards SSE data to background
-// 4. Renders and updates the floating overlay
+// 3. Updates overlay DIRECTLY from SSE data (no background round-trip needed)
+// 4. Also forwards SSE data to background for persistent storage
+// 5. Survives SPA navigations with multi-strategy detection
 
-// 1. Inject the fetch interceptor into MAIN world
+const CONTAINER_ID = "__claude_counter_overlay";
+const CONTEXT_LIMIT = 200_000;
+
+// ── Safe chrome.runtime wrapper ───────────────────────────────────────────
+// When the extension is reloaded/updated, old content scripts lose their
+// connection to the background. All chrome.runtime calls go through here.
+function extensionAlive() {
+  try { return chrome.runtime?.id; } catch { return false; }
+}
+function safeSendMessage(msg, callback) {
+  if (!extensionAlive()) return;
+  try {
+    chrome.runtime.sendMessage(msg, callback);
+  } catch {
+    // context invalidated — silently ignore
+  }
+}
+
+// ── Self-destruct when context dies ───────────────────────────────────────
+// When extension is reloaded, the old content script should stop doing
+// everything — stop intervals, stop observers, suppress all errors.
+let contextDead = false;
+function shutdown() {
+  contextDead = true;
+}
+// Catch the very first context-invalidated error and self-destruct
+window.addEventListener("error", (e) => {
+  if (e.message === "Extension context invalidated.") {
+    e.stopImmediatePropagation();
+    e.preventDefault();
+    shutdown();
+  }
+});
+// Also catch unhandled promise rejections
+window.addEventListener("unhandledrejection", (e) => {
+  if (e.reason?.message === "Extension context invalidated.") {
+    e.preventDefault();
+    shutdown();
+  }
+});
+
+// ── 1. Inject the fetch interceptor into MAIN world ────────────────────────
 const script = document.createElement("script");
 script.src = chrome.runtime.getURL("injected.js");
 script.onload = () => script.remove();
 (document.documentElement || document.head || document.body).appendChild(script);
 
-// 2. Listen for events from injected script
+// ── 2. LOCAL state — overlay renders from this directly ───────────────────
+// This is the key change: we keep a local copy of state and update it
+// from SSE events IMMEDIATELY, without waiting for background round-trip.
+let localState = {};
+
+function mergeLocal(partial) {
+  if (contextDead) return;
+  localState = { ...localState, ...partial };
+  renderOverlay(localState);
+}
+
+// ── 3. Listen for SSE events from injected script ─────────────────────────
+// Update overlay DIRECTLY (instant) + forward to background (for storage)
 window.addEventListener("__claudeCounterData", (e) => {
-  chrome.runtime.sendMessage({ type: "SSE_DATA", data: e.detail });
+  const d = e.detail;
+
+  // Direct local update — overlay refreshes immediately
+  const patch = {};
+  if (d.conversationTokens != null) patch.conversationTokens = d.conversationTokens;
+  if (d.model) patch.model = d.model;
+  if (d.cacheWriteAt) patch.cacheWriteAt = d.cacheWriteAt;
+  if (d.sessionFraction != null) {
+    patch.session = {
+      ...(localState.session || {}),
+      sseExactFraction: d.sessionFraction,
+      ...(d.sessionResetsAt ? { resetsAt: d.sessionResetsAt } : {}),
+    };
+  }
+  if (d.weeklyFraction != null) {
+    patch.weekly = {
+      ...(localState.weekly || {}),
+      sseExactFraction: d.weeklyFraction,
+      ...(d.weeklyResetsAt ? { resetsAt: d.weeklyResetsAt } : {}),
+    };
+  }
+  if (d.sessionFraction == null && d.sessionResetsAt) {
+    // Got resetsAt but no fraction — still update it
+    patch.session = { ...(localState.session || {}), resetsAt: d.sessionResetsAt };
+  }
+  patch._sseLocal = Date.now();
+  mergeLocal(patch);
+
+  // Also forward to background for persistent storage + cross-tab sync
+  safeSendMessage({ type: "SSE_DATA", data: d });
 });
 
-// 3. Listen for state updates from background
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-  if (msg.type === "STATE_UPDATE") {
-    renderOverlay(msg.state);
-    sendResponse({ ok: true });
+// ── 4. Listen for full state updates from background ──────────────────────
+// Background sends this after API polls — merge into local state
+try {
+  chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+    if (contextDead) return;
+    if (msg.type === "STATE_UPDATE") {
+      // Merge — but don't overwrite fresh SSE data with stale API data
+      const s = msg.state;
+      const now = Date.now();
+      const freshSSE = (now - (localState._sseLocal || 0)) < 300000;
+
+      const patch = { ...s };
+      if (freshSSE) {
+        // Keep our SSE-exact fractions over API fractions
+        if (localState.session?.sseExactFraction != null) {
+          patch.session = { ...(patch.session || {}), sseExactFraction: localState.session.sseExactFraction };
+        }
+        if (localState.weekly?.sseExactFraction != null) {
+          patch.weekly = { ...(patch.weekly || {}), sseExactFraction: localState.weekly.sseExactFraction };
+        }
+      }
+      mergeLocal(patch);
+      try { sendResponse({ ok: true }); } catch { }
+    }
+  });
+} catch {
+  shutdown();
+}
+
+// ── 5. Initial state load from background ─────────────────────────────────
+safeSendMessage({ type: "GET_STATE" }, (state) => {
+  if (state && Object.keys(state).length > 0) {
+    localState = { ...localState, ...state };
+    renderOverlay(localState);
   }
 });
 
-// 4. Initial state load
-chrome.runtime.sendMessage({ type: "GET_STATE" }, (state) => {
-  if (state && Object.keys(state).length > 0) renderOverlay(state);
-});
+safeSendMessage({ type: "TRIGGER_POLL" });
 
-chrome.runtime.sendMessage({ type: "TRIGGER_POLL" });
+// ── SPA navigation: keep overlay alive across chat switches ─────────────
+// Claude is a React SPA — switching chats does NOT reload the page.
+// React can wipe our overlay DOM during re-render, so we need multiple
+// strategies to detect navigation and re-create the overlay.
 
-// Re-request on SPA navigation (URL changes without page reload)
 let lastUrl = location.href;
-new MutationObserver(() => {
-  if (location.href !== lastUrl) {
+let navDebounce = null;
+
+function onNavigate() {
+  if (contextDead) return;
+  // Debounce — React fires many mutations during one navigation
+  clearTimeout(navDebounce);
+  navDebounce = setTimeout(() => {
+    if (location.href === lastUrl) return;
     lastUrl = location.href;
-    chrome.runtime.sendMessage({ type: "TRIGGER_POLL" });
-    chrome.runtime.sendMessage({ type: "GET_STATE" }, (state) => {
-      if (state && Object.keys(state).length > 0) renderOverlay(state);
+    ensureOverlayAlive();
+    // Re-render with whatever state we have locally
+    renderOverlay(localState);
+    // Also request fresh data from background
+    safeSendMessage({ type: "TRIGGER_POLL" });
+    safeSendMessage({ type: "GET_STATE" }, (state) => {
+      if (state && Object.keys(state).length > 0) {
+        localState = { ...localState, ...state };
+        renderOverlay(localState);
+      }
     });
-  }
+  }, 150);
+}
+
+// Strategy 1: MutationObserver (catches most React navigations)
+new MutationObserver(() => {
+  if (contextDead) return;
+  if (location.href !== lastUrl) onNavigate();
 }).observe(document, { subtree: true, childList: true });
 
-// Overlay rendering
-const CONTAINER_ID = "__claude_counter_overlay";
-const CONTEXT_LIMIT = 200_000;
+// Strategy 2: Intercept pushState/replaceState (catches programmatic navigation)
+const _pushState = history.pushState;
+const _replaceState = history.replaceState;
+history.pushState = function () {
+  _pushState.apply(this, arguments);
+  onNavigate();
+};
+history.replaceState = function () {
+  _replaceState.apply(this, arguments);
+  onNavigate();
+};
+window.addEventListener("popstate", () => onNavigate());
+
+// Strategy 3: Periodic health check — if overlay got wiped, re-create it
+setInterval(() => {
+  if (contextDead || !extensionAlive()) return;
+  if (!document.getElementById(CONTAINER_ID)) {
+    renderOverlay(localState);
+  }
+}, 2000);
+
+// Strategy 4: Also re-create overlay if it exists but is detached from DOM
+function ensureOverlayAlive() {
+  const el = document.getElementById(CONTAINER_ID);
+  if (el && !document.body?.contains(el)) {
+    el.remove(); // it's orphaned — kill it so getOrCreateOverlay makes a fresh one
+  }
+}
+
+// Initial trigger
+ensureOverlayAlive();
+
+// ── Overlay rendering ──────────────────────────────────────────────────────
 
 function getOrCreateOverlay() {
   let el = document.getElementById(CONTAINER_ID);
+  // If element exists but is orphaned (detached from DOM), remove it
+  if (el && !document.body?.contains(el)) {
+    el.remove();
+    el = null;
+  }
   if (!el) {
     el = document.createElement("div");
     el.id = CONTAINER_ID;
@@ -76,6 +241,7 @@ function getOrCreateOverlay() {
 }
 
 function renderOverlay(state) {
+  if (contextDead || !state) return;
   const el = getOrCreateOverlay();
 
   const sessionFrac = state.session?.sseExactFraction ?? state.session?.fraction ?? null;
@@ -163,7 +329,7 @@ function fmtCountdown(ms) {
   return `in ${s}s`;
 }
 
-// Drag support
+// ── Drag support ───────────────────────────────────────────────────────────
 function setupDrag(el) {
   const handle = el.querySelector("#cc-handle");
   let dragging = false, ox = 0, oy = 0;
@@ -199,7 +365,7 @@ function setupCollapse(el) {
   });
 }
 
-// HTML & CSS templates
+// ── HTML & CSS templates ───────────────────────────────────────────────────
 function overlayHTML() {
   return `
 <div id="cc-header">
@@ -381,5 +547,3 @@ function overlayCSS() {
   margin: 6px 0;
 }`;
 }
-
-// Refactored event logging payload

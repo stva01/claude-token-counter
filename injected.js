@@ -35,16 +35,19 @@
     let model = null;
     let sessionFraction = null;
     let weeklyFraction = null;
+    let sessionResetsAt = null;
+    let weeklyResetsAt = null;
     let cacheWriteAt = null;
-    let hasOfficialUsage = false;
     let deltaChunks = 0;
 
     function emitNow() {
       dispatch({
         conversationTokens,
-        model,
+        model: model || undefined,
         sessionFraction,
         weeklyFraction,
+        sessionResetsAt,
+        weeklyResetsAt,
         cacheWriteAt,
       });
     }
@@ -65,12 +68,15 @@
           let evt;
           try { evt = JSON.parse(jsonStr); } catch { continue; }
 
-          // message_start — immediate dispatch with model + input tokens
+          // ── message_start — extract model name ──────────────────────────
           if (evt.type === "message_start" && evt.message) {
+            // Claude now sends model as "" (empty) — skip if falsy
             if (evt.message.model) model = evt.message.model;
+
+            // Claude no longer includes usage in message_start,
+            // but check just in case older endpoints still do
             const usage = evt.message.usage;
             if (usage) {
-              hasOfficialUsage = true;
               conversationTokens = (usage.input_tokens || 0) + (usage.output_tokens || 0);
               if (usage.cache_creation_input_tokens > 0) {
                 cacheWriteAt = Date.now();
@@ -79,23 +85,46 @@
             emitNow();
           }
 
-          // message_limit event — session/weekly fractions
+          // ── message_limit — session & weekly usage fractions ─────────────
+          // Claude's format changed: now uses windows.5h / windows.7d
           if (evt.type === "message_limit") {
             const lim = evt.message_limit;
             if (lim) {
-              if (lim.remaining_tokens != null && lim.total_tokens != null) {
+              // NEW format (current): windows.5h / windows.7d
+              if (lim.windows) {
+                const fiveH = lim.windows["5h"];
+                const sevenD = lim.windows["7d"];
+                if (fiveH && fiveH.utilization != null) {
+                  sessionFraction = fiveH.utilization; // already a fraction (0.16 = 16%)
+                }
+                if (fiveH && fiveH.resets_at != null) {
+                  // resets_at is a Unix timestamp in seconds — convert to ms
+                  sessionResetsAt = fiveH.resets_at * 1000;
+                }
+                if (sevenD && sevenD.utilization != null) {
+                  weeklyFraction = sevenD.utilization;
+                }
+                if (sevenD && sevenD.resets_at != null) {
+                  weeklyResetsAt = sevenD.resets_at * 1000;
+                }
+              }
+
+              // OLD format fallback (in case some accounts still get it)
+              if (sessionFraction == null && lim.remaining_tokens != null && lim.total_tokens != null) {
                 sessionFraction = 1 - lim.remaining_tokens / lim.total_tokens;
-              } else if (lim.consumed_fraction != null) {
+              }
+              if (sessionFraction == null && lim.consumed_fraction != null) {
                 sessionFraction = lim.consumed_fraction;
               }
-              if (lim.weekly_consumed_fraction != null) {
+              if (weeklyFraction == null && lim.weekly_consumed_fraction != null) {
                 weeklyFraction = lim.weekly_consumed_fraction;
               }
+
               emitNow();
             }
           }
 
-          // content_block_delta — update tokens during streaming
+          // ── content_block_delta — estimate tokens during streaming ───────
           if (evt.type === "content_block_delta") {
             const text = evt.delta?.text || "";
             conversationTokens += Math.ceil(text.length / 4);
@@ -103,9 +132,9 @@
             if (deltaChunks % 15 === 0) emitNow();
           }
 
-          // message_delta — final dispatch with exact output tokens
+          // ── message_delta — Claude no longer sends usage here, ─────────
+          // but keep checking in case older endpoints still do
           if (evt.type === "message_delta" && evt.usage) {
-            hasOfficialUsage = true;
             conversationTokens =
               (evt.usage.input_tokens || conversationTokens) +
               (evt.usage.output_tokens || 0);
@@ -122,5 +151,3 @@
     emitNow();
   }
 })();
-
-// Fixed stream logging output
