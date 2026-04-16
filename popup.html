@@ -36,7 +36,7 @@
     overflow: hidden;
   }
 
-  /* ── Header ── */
+  /* Header */
   .header {
     background: var(--bg-sidebar);
     padding: 13px 14px 11px;
@@ -85,12 +85,12 @@
     white-space: nowrap;
   }
 
-  /* ── Body ── */
+  /* Body */
   .body {
     padding: 12px 14px 0;
   }
 
-  /* ── Section label ── */
+  /* Section label */
   .section-label {
     font-size: 8.5px;
     font-weight: 500;
@@ -102,7 +102,7 @@
     border-bottom: 1px solid var(--border-soft);
   }
 
-  /* ── Metric row ── */
+  /* Metric row */
   .metric {
     display: grid;
     grid-template-columns: 52px 1fr 56px;
@@ -171,14 +171,14 @@
     letter-spacing: 0.02em;
   }
 
-  /* ── Divider ── */
+  /* Divider */
   .divider {
     height: 1px;
     background: var(--border-soft);
     margin: 10px 0;
   }
 
-  /* ── Context block ── */
+  /* Context block */
   .context-block {
     margin-bottom: 12px;
   }
@@ -227,7 +227,7 @@
     letter-spacing: 0.02em;
   }
 
-  /* ── Footer ── */
+  /* Footer */
   .footer {
     padding: 0 14px 12px;
     display: flex;
@@ -278,7 +278,7 @@
     letter-spacing: 0.03em;
   }
 
-  /* ── Stagger-in animation ── */
+  /* Stagger-in animation */
   @keyframes fadeUp {
     from { opacity: 0; transform: translateY(4px); }
     to   { opacity: 1; transform: translateY(0); }
@@ -357,7 +357,7 @@
 </div>
 
 <script>
-// ── Helpers ────────────────────────────────────────────────────────────────
+// Helpers
 const CONTEXT_LIMIT = 200_000;
 
 function pct(f)    { return Math.round(f * 100) + "%"; }
@@ -385,7 +385,7 @@ function setBar(id, fraction) {
   el.style.background = barColor(fraction);
 }
 
-// ── Render ─────────────────────────────────────────────────────────────────
+// Render
 function render(state) {
   const dot = document.getElementById("status-dot");
 
@@ -458,7 +458,7 @@ function render(state) {
     ago != null ? `synced ${ago}s ago` : "live";
 }
 
-// ── Init ───────────────────────────────────────────────────────────────────
+// Init
 chrome.runtime.sendMessage({ type: "GET_STATE" }, render);
 
 document.getElementById("refresh-btn").addEventListener("click", () => {

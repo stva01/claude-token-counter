@@ -4,18 +4,18 @@
 // 3. Forwards SSE data to background
 // 4. Renders and updates the floating overlay
 
-// ── 1. Inject the fetch interceptor into MAIN world ────────────────────────
+// 1. Inject the fetch interceptor into MAIN world
 const script = document.createElement("script");
 script.src = chrome.runtime.getURL("injected.js");
 script.onload = () => script.remove();
 (document.documentElement || document.head || document.body).appendChild(script);
 
-// ── 2. Listen for events from injected script ──────────────────────────────
+// 2. Listen for events from injected script
 window.addEventListener("__claudeCounterData", (e) => {
   chrome.runtime.sendMessage({ type: "SSE_DATA", data: e.detail });
 });
 
-// ── 3. Listen for state updates from background ────────────────────────────
+// 3. Listen for state updates from background
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type === "STATE_UPDATE") {
     renderOverlay(msg.state);
@@ -23,7 +23,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
 });
 
-// ── 4. Initial state load ──────────────────────────────────────────────────
+// 4. Initial state load
 chrome.runtime.sendMessage({ type: "GET_STATE" }, (state) => {
   if (state && Object.keys(state).length > 0) renderOverlay(state);
 });
@@ -42,7 +42,7 @@ new MutationObserver(() => {
   }
 }).observe(document, { subtree: true, childList: true });
 
-// ── Overlay rendering ──────────────────────────────────────────────────────
+// Overlay rendering
 const CONTAINER_ID = "__claude_counter_overlay";
 const CONTEXT_LIMIT = 200_000;
 
@@ -163,7 +163,7 @@ function fmtCountdown(ms) {
   return `in ${s}s`;
 }
 
-// ── Drag support ───────────────────────────────────────────────────────────
+// Drag support
 function setupDrag(el) {
   const handle = el.querySelector("#cc-handle");
   let dragging = false, ox = 0, oy = 0;
@@ -199,7 +199,7 @@ function setupCollapse(el) {
   });
 }
 
-// ── HTML & CSS templates ───────────────────────────────────────────────────
+// HTML & CSS templates
 function overlayHTML() {
   return `
 <div id="cc-header">

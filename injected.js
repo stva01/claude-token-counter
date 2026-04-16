@@ -65,7 +65,7 @@
           let evt;
           try { evt = JSON.parse(jsonStr); } catch { continue; }
 
-          // ── message_start — immediate dispatch with model + input tokens ──
+          // message_start — immediate dispatch with model + input tokens
           if (evt.type === "message_start" && evt.message) {
             if (evt.message.model) model = evt.message.model;
             const usage = evt.message.usage;
@@ -79,7 +79,7 @@
             emitNow();
           }
 
-          // ── message_limit event — session/weekly fractions ────────────────
+          // message_limit event — session/weekly fractions
           if (evt.type === "message_limit") {
             const lim = evt.message_limit;
             if (lim) {
@@ -95,7 +95,7 @@
             }
           }
 
-          // ── content_block_delta — update tokens during streaming ──────────
+          // content_block_delta — update tokens during streaming
           if (evt.type === "content_block_delta") {
             const text = evt.delta?.text || "";
             conversationTokens += Math.ceil(text.length / 4);
@@ -103,7 +103,7 @@
             if (deltaChunks % 15 === 0) emitNow();
           }
 
-          // ── message_delta — final dispatch with exact output tokens ────────
+          // message_delta — final dispatch with exact output tokens
           if (evt.type === "message_delta" && evt.usage) {
             hasOfficialUsage = true;
             conversationTokens =
