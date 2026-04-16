@@ -29,3 +29,14 @@ A Google Chrome Extension that provides a real-time token usage tracker for AI a
 - **Manifest V3**: Built with the modern Chrome Extension platform standard.
 - **Service Worker (`background.js`)**: Handles background token aggregation securely and reliably.
 - **Data Injection**: Content scripts and injected scripts safely communicate context without exposing sensitive data.
+
+## Contact
+
+If you have any questions, feedback, or would like to get in touch regarding this extension, feel free to reach out:
+- **Email**: [satvalite@gmail.com](mailto:satvalite@gmail.com)
+
+## License & Legal
+
+Copyright (c) 2026. All Rights Reserved.
+
+This application and its source code are provided "as is" without warranty of any kind, express or implied.
