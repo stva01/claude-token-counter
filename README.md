@@ -35,8 +35,10 @@ A Google Chrome Extension that provides a real-time token usage tracker for AI a
 If you have any questions, feedback, or would like to get in touch regarding this extension, feel free to reach out:
 - **Email**: [satvalite@gmail.com](mailto:satvalite@gmail.com)
 
+
 ## License & Legal
 
 Copyright (c) 2026. All Rights Reserved.
 
 This application and its source code are provided "as is" without warranty of any kind, express or implied.
+Up for Testing only

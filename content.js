@@ -381,3 +381,5 @@ function overlayCSS() {
   margin: 6px 0;
 }`;
 }
+
+// Refactored event logging payload

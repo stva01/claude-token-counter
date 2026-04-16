@@ -138,3 +138,5 @@ function broadcastUpdate(state) {
 }
 
 pollUsage();
+
+// Set up polling logs
