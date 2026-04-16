@@ -7,11 +7,22 @@ const USAGE_KEY = "claudeUsage";
 
 // ── Alarm: periodic polling ────────────────────────────────────────────────
 chrome.runtime.onInstalled.addListener(() => {
+  // Create alarm — fires every 3 minutes
   chrome.alarms.create("pollUsage", { periodInMinutes: POLL_INTERVAL_MINUTES });
+  // Also fire immediately on first install
+  setTimeout(() => pollUsage(), 1000);
 });
 
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === "pollUsage") pollUsage();
+});
+
+// MV3 service workers can be killed and restarted.
+// On restart, ensure the alarm still exists.
+chrome.alarms.get("pollUsage", (alarm) => {
+  if (!alarm) {
+    chrome.alarms.create("pollUsage", { periodInMinutes: POLL_INTERVAL_MINUTES });
+  }
 });
 
 // ── On message from content/injected scripts ───────────────────────────────
@@ -24,11 +35,11 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     chrome.storage.local.get(USAGE_KEY, (res) => {
       sendResponse(res[USAGE_KEY] || null);
     });
-    return true;
+    return true; // keep channel open for async sendResponse
   }
   if (msg.type === "TRIGGER_POLL") {
     pollUsage().then(() => sendResponse({ ok: true }));
-    return true;
+    return true; // keep channel open for async sendResponse
   }
 });
 
@@ -145,4 +156,6 @@ function broadcastUpdate(state) {
   });
 }
 
+// Kick off first poll when service worker starts
+// (runs on every wake, not just onInstalled)
 pollUsage();

@@ -36,7 +36,7 @@
     overflow: hidden;
   }
 
-  /* Header */
+  /* ── Header ── */
   .header {
     background: var(--bg-sidebar);
     padding: 13px 14px 11px;
@@ -85,12 +85,12 @@
     white-space: nowrap;
   }
 
-  /* Body */
+  /* ── Body ── */
   .body {
     padding: 12px 14px 0;
   }
 
-  /* Section label */
+  /* ── Section label ── */
   .section-label {
     font-size: 8.5px;
     font-weight: 500;
@@ -102,7 +102,7 @@
     border-bottom: 1px solid var(--border-soft);
   }
 
-  /* Metric row */
+  /* ── Metric row ── */
   .metric {
     display: grid;
     grid-template-columns: 52px 1fr 56px;
@@ -171,14 +171,14 @@
     letter-spacing: 0.02em;
   }
 
-  /* Divider */
+  /* ── Divider ── */
   .divider {
     height: 1px;
     background: var(--border-soft);
     margin: 10px 0;
   }
 
-  /* Context block */
+  /* ── Context block ── */
   .context-block {
     margin-bottom: 12px;
   }
@@ -227,7 +227,7 @@
     letter-spacing: 0.02em;
   }
 
-  /* Footer */
+  /* ── Footer ── */
   .footer {
     padding: 0 14px 12px;
     display: flex;
@@ -278,7 +278,7 @@
     letter-spacing: 0.03em;
   }
 
-  /* Stagger-in animation */
+  /* ── Stagger-in animation ── */
   @keyframes fadeUp {
     from { opacity: 0; transform: translateY(4px); }
     to   { opacity: 1; transform: translateY(0); }
@@ -357,8 +357,9 @@
 </div>
 
 <script>
-// Helpers
+// ── Helpers ────────────────────────────────────────────────────────────────
 const CONTEXT_LIMIT = 200_000;
+const USAGE_KEY = "claudeUsage";
 
 function pct(f)    { return Math.round(f * 100) + "%"; }
 function fmtNum(n) { return n >= 1000 ? (n / 1000).toFixed(1) + "k" : String(n); }
@@ -385,14 +386,17 @@ function setBar(id, fraction) {
   el.style.background = barColor(fraction);
 }
 
-// Render
+// ── Render ─────────────────────────────────────────────────────────────────
+let loaded = false;
+
 function render(state) {
+  loaded = true;
   const dot = document.getElementById("status-dot");
 
   if (!state || Object.keys(state).length === 0) {
     document.getElementById("val-session").textContent = "no data";
     document.getElementById("val-weekly").textContent  = "—";
-    document.getElementById("status").textContent      = "use Claude first";
+    document.getElementById("status").textContent      = "open claude.ai to start";
     return;
   }
 
@@ -458,19 +462,62 @@ function render(state) {
     ago != null ? `synced ${ago}s ago` : "live";
 }
 
-// Init
-chrome.runtime.sendMessage({ type: "GET_STATE" }, render);
+// ── Init: read DIRECTLY from storage (no service worker dependency) ──────
+// chrome.storage.local.get() works even if the service worker is dead.
+// This prevents the "loading..." stuck state on cold starts.
+chrome.storage.local.get(USAGE_KEY, (res) => {
+  render(res[USAGE_KEY] || null);
+});
 
+// ALSO try messaging the background (in case it has fresher data)
+// If the service worker is alive, this will return quickly and re-render.
+// If it's dead, the timeout below catches it gracefully.
+setTimeout(() => {
+  if (loaded) return;
+  try {
+    chrome.runtime.sendMessage({ type: "GET_STATE" }, (state) => {
+      if (!loaded) render(state || null);
+    });
+  } catch {}
+}, 800);
+
+// Timeout: if NOTHING loaded after 3s, show "no data" instead of "loading..."
+setTimeout(() => {
+  if (!loaded) {
+    render(null);
+  }
+}, 3000);
+
+// Listen for storage changes (live updates while popup is open)
+chrome.storage.onChanged.addListener((changes) => {
+  if (changes[USAGE_KEY]) {
+    render(changes[USAGE_KEY].newValue || null);
+  }
+});
+
+// ── Refresh button ──────────────────────────────────────────────────────
 document.getElementById("refresh-btn").addEventListener("click", () => {
   document.getElementById("status").textContent = "refreshing…";
   document.getElementById("status-dot").classList.remove("live");
-  chrome.runtime.sendMessage({ type: "TRIGGER_POLL" }, () => {
-    setTimeout(() => chrome.runtime.sendMessage({ type: "GET_STATE" }, render), 1500);
-  });
+
+  // Try to wake the service worker and trigger a poll
+  try {
+    chrome.runtime.sendMessage({ type: "TRIGGER_POLL" }, () => {
+      // After giving background time to fetch, re-read from storage directly
+      setTimeout(() => {
+        chrome.storage.local.get(USAGE_KEY, (res) => {
+          render(res[USAGE_KEY] || null);
+        });
+      }, 2000);
+    });
+  } catch {
+    // Service worker dead — just show what we have
+    chrome.storage.local.get(USAGE_KEY, (res) => {
+      render(res[USAGE_KEY] || null);
+    });
+  }
 });
 </script>
 
 </body>
 </html>
-
-<!-- Fixed UI bounds error logging -->
